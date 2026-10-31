@@ -1,0 +1,35 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowListAllBuckets",
+      "Effect": "Allow",
+      "Action": ["s3:GetBucketLocation", "s3:ListAllMyBuckets"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowDevBucketsOnly",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": ["arn:aws:s3:::shopfast-dev-*", "arn:aws:s3:::shopfast-dev-*/*"]
+    },
+    {
+      "Sid": "AllowViewEC2Only",
+      "Effect": "Allow",
+      "Action": ["ec2:DescribeInstances", "ec2:DescribeImages", "ec2:DescribeTags", "ec2:DescribeSecurityGroups", "ec2:DescribeSubnets", "ec2:DescribeVpcs"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyDangerousEC2",
+      "Effect": "Deny",
+      "Action": ["ec2:StopInstances", "ec2:TerminateInstances", "ec2:RebootInstances"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyAllIAM",
+      "Effect": "Deny",
+      "Action": "iam:*",
+      "Resource": "*"
+    }
+  ]
+}
