@@ -1,20 +1,19 @@
-name: S06 - Ex01 CI/CD Pipeline
+name: S06 - Ex02 CI/CD Pipeline
 
 on:
   push:
     branches: [main, master, "feature/**", develop]
-    # CHỈ CHẠY KHI CÓ THAY ĐỔI TRONG THƯ MỤC CỦA BÀI NÀY
     paths:
-      - "Session06/Ex01/**"
-      - ".github/workflows/s06-ex01.yml"
+      - "Session06/Ex02/**"
+      - ".github/workflows/s06-ex02.yml"
   pull_request:
     branches: [main, master]
     paths:
-      - "Session06/Ex01/**"
+      - "Session06/Ex02/**"
 
 jobs:
   # =========================================================================
-  # JOB 1: KIỂM THỬ TÍCH HỢP CHO EX01
+  # JOB 1: KIỂM THỬ TÍCH HỢP CHO EX02
   # =========================================================================
   test:
     runs-on: ubuntu-latest
@@ -44,7 +43,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: Session06/Ex01
+        working-directory: Session06/Ex02
 
     steps:
       - name: Checkout mã nguồn
@@ -55,9 +54,9 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: Session06/Ex01/package-lock.json
+          cache-dependency-path: Session06/Ex02/package-lock.json
 
-      - name: Cài đặt thư viện sạch sẽ
+      - name: Cài đặt phụ thuộc sạch sẽ
         run: npm ci
 
       - name: Chạy kiểm thử tự động
@@ -92,9 +91,9 @@ jobs:
       - name: Đóng gói và đẩy Image lên kho lưu trữ
         uses: docker/build-push-action@v5
         with:
-          context: Session06/Ex01
-          file: Session06/Ex01/Dockerfile
+          context: Session06/Ex02
+          file: Session06/Ex02/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/ex01:${{ github.sha }}
-            ghcr.io/${{ github.repository }}/ex01:latest
+            ghcr.io/${{ github.repository }}/ex02:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/ex02:latest
