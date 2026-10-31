@@ -1,6 +1,5 @@
 name: CI/CD Pipeline
 
-# Lắng nghe sự kiện push và pull request
 on:
   push:
     branches: [main, master, "feature/**", develop]
@@ -9,12 +8,12 @@ on:
 
 jobs:
   # =========================================================================
-  # JOB 1: KIỂM THỬ TÍCH HỢP (CHẠY TRÊN MỌI NHÁNH VÀ MỌI PR)
+  # JOB 1: KIỂM THỬ TÍCH HỢP
   # =========================================================================
   test:
     runs-on: ubuntu-latest
 
-    # Bẫy dữ liệu: Cung cấp sẵn PostgreSQL và Redis container thật cho integration test
+    # Khởi tạo Postgres và Redis thật cho integration test
     services:
       postgres:
         image: postgres:16
@@ -38,31 +37,36 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+    # Đặt thư mục chạy lệnh mặc định vào Session06/Ex01
+    defaults:
+      run:
+        working-directory: Session06/Ex01
+
     steps:
       - name: Checkout mã nguồn
         uses: actions/checkout@v4
 
-      - name: Thiết lập Node.js 20 và bật Cache
+      - name: Thiết lập Node.js 20 và bật Cache phụ thuộc
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm" # (1) BẬT BỘ NHỚ ĐỆM CHO THƯ MỤC PHỤ THUỘC
+          cache: "npm"
+          cache-dependency-path: Session06/Ex01/package-lock.json
 
-      - name: Cài đặt phụ thuộc sạch sẽ
+      - name: Cài đặt thư viện sạch sẽ
         run: npm ci
 
-      - name: (2) Chạy kiểm thử tự động
+      - name: Chạy kiểm thử tự động
         run: npm test
 
   # =========================================================================
-  # JOB 2: ĐÓNG GÓI VÀ ĐẨY IMAGE (CHỈ CHẠY KHI TEST PASS VÀ Ở NHÁNH CHÍNH)
+  # JOB 2: ĐÓNG GÓI VÀ ĐẨY IMAGE (CHỈ CHẠY TRÊN NHÁNH CHÍNH VÀ KHI TEST ĐẠT)
   # =========================================================================
   build-and-push:
-    needs: test # (2) ĐIỀU KIỆN TIÊN QUYẾT: TEST PHẢI PASS MỚI ĐƯỢC CHẠY
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' # (4) CHỈ CHẠY Ở NHÁNH CHÍNH
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
 
-    # Cấp quyền cho GitHub Actions tự push image vào GHCR của repo
     permissions:
       contents: read
       packages: write
@@ -76,7 +80,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }} # (3) SỬ DỤNG SECRET CỦA NỀN TẢNG, KHÔNG LỘ MẬT KHẨU
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cài đặt Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -84,7 +88,8 @@ jobs:
       - name: Đóng gói và đẩy Image lên kho lưu trữ
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: Session06/Ex01
+          file: Session06/Ex01/Dockerfile
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.sha }}
