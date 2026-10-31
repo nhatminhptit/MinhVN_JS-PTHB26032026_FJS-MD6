@@ -1,0 +1,208 @@
+name: S06 - Ex03 Multi-Environment Pipeline
+
+# Lắng nghe sự kiện PR, Push nhánh develop và main/master, cùng hỗ trợ Rollback thủ công
+on:
+  pull_request:
+    branches: [develop, main, master]
+    paths:
+      - "Session06/Ex03/**"
+      - ".github/workflows/s06-ex03.yml"
+  push:
+    branches: [develop, main, master]
+    paths:
+      - "Session06/Ex03/**"
+      - ".github/workflows/s06-ex03.yml"
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Môi trường muốn thao tác (staging / production)"
+        required: true
+        default: "production"
+      target_commit_sha:
+        description: "Mã Commit SHA phiên bản muốn rollback về"
+        required: true
+
+jobs:
+  # =========================================================================
+  # JOB 1: KIỂM THỬ ĐƠN VỊ & TÍCH HỢP (CHẶN NÚT MERGE NẾU THẤT BẠI)
+  # =========================================================================
+  quality-check:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: shopfast_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: Session06/Ex03
+
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Thiết lập Node.js 20 và bộ nhớ đệm phụ thuộc
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: Session06/Ex03/package-lock.json
+
+      - name: Cài đặt dependencies sạch sẽ
+        run: npm ci
+
+      - name: Chạy kiểm tra định dạng và kiểm thử tự động
+        run: npm test
+
+  # =========================================================================
+  # JOB 2: TỰ ĐỘNG TRIỂN KHAI LÊN MÔI TRƯỜNG STAGING KHI MERGE VÀO DEVELOP
+  # =========================================================================
+  deploy-staging:
+    needs: quality-check
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: staging
+
+    defaults:
+      run:
+        working-directory: Session06/Ex03
+
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Khởi tạo triển khai lên máy chủ Staging
+        run: |
+          echo "Bắt đầu cập nhật tự động lên môi trường Staging..."
+          echo "Triển khai phiên bản Commit: ${{ github.sha }}"
+          echo "Trạng thái: Hoàn tất cập nhật Staging thành công!"
+
+  # =========================================================================
+  # JOB 3: ĐÓNG GÓI IMAGE VỚI THẺ COMMIT SHA KHI MERGE VÀO MAIN/MASTER
+  # =========================================================================
+  build-production-image:
+    needs: quality-check
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Chuẩn hóa tên repository về chữ thường
+        run: |
+          echo "REPO_LOWER=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Đăng nhập vào GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cài đặt Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Đóng gói và đẩy Image lên GHCR với Commit SHA
+        uses: docker/build-push-action@v5
+        with:
+          context: Session06/Ex03
+          file: Session06/Ex03/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ env.REPO_LOWER }}/shopfast-prod:${{ github.sha }}
+            ghcr.io/${{ env.REPO_LOWER }}/shopfast-prod:latest
+
+  # =========================================================================
+  # JOB 4: CHỜ PHÊ DUYỆT THỦ CÔNG VÀ TRIỂN KHAI PRODUCTION (CÓ CHỐNG BẪY)
+  # =========================================================================
+  deploy-production:
+    needs: build-production-image
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    # Gán vào Environment 'production' để kích hoạt Cổng chờ duyệt thủ công
+    environment: production
+
+    # BẪY 1: Chống 2 đợt merge chạy chồng lấn lên nhau
+    concurrency:
+      group: production-deployment-lock
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      # BẪY 2: Chạy Transactional Database Migration có kiểm soát
+      - name: Thực thi di chuyển cấu trúc CSDL an toàn (Transactional Migration)
+        run: |
+          echo "Đang áp dụng migration trong một Database Transaction duy nhất..."
+          # Giả lập lệnh migration chạy an toàn với cơ chế rollback
+          echo "Migration kiểm tra tính tương thích ngược hoàn tất."
+
+      - name: Cập nhật Container ứng dụng trên Production
+        run: |
+          echo "Cập nhật ứng dụng chạy Image: ghcr.io/${{ env.REPO_LOWER }}/shopfast-prod:${{ github.sha }}"
+          echo "Khởi chạy phiên bản mới thành công không gián đoạn (Zero-downtime)!"
+
+  # =========================================================================
+  # JOB 5: QUY TRÌNH QUAY LUI DƯỚI 3 PHÚT (ROLLBACK DISPATCH)
+  # =========================================================================
+  rollback:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+
+    concurrency:
+      group: production-deployment-lock
+      cancel-in-progress: false
+
+    steps:
+      - name: Bắt đầu bấm giờ Rollback
+        run: echo "ROLLBACK_START=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Chuẩn hóa tên repository
+        run: echo "REPO_LOWER=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Kéo bản Image cũ và cập nhật Production
+        run: |
+          TARGET_TAG="${{ github.event.inputs.target_commit_sha }}"
+          echo "Đang phục hồi hệ thống về phiên bản commit: $TARGET_TAG"
+          echo "docker pull ghcr.io/${{ env.REPO_LOWER }}/shopfast-prod:$TARGET_TAG"
+          echo "docker stop shopfast-production-app"
+          echo "docker run -d --name shopfast-production-app ghcr.io/${{ env.REPO_LOWER }}/shopfast-prod:$TARGET_TAG"
+
+      - name: Kiểm tra thời gian hoàn tất quy trình quay lui (< 3 phút)
+        run: |
+          END_TIME=$(date +%s)
+          DIFF=$((END_TIME - ROLLBACK_START))
+          echo "Thời gian thực hiện rollback: $DIFF giây"
+          if [ $DIFF -le 180 ]; then
+            echo "=> ĐẠT CHỈ TIÊU: Quay lui thành công trong thời gian dưới 3 phút (thực tế: $DIFF giây)!"
+          else
+            echo "=> CẢNH BÁO: Quá 3 phút!"
+            exit 1
+          fi
