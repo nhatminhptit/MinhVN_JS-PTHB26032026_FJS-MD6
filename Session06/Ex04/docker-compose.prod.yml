@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  # Load Balancer điều phối traffic
+  loadbalancer:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app_green_1
+      - app_blue_1
+
+  # CỤM BLUE (Phiên bản v1 hiện tại - 4 container)
+  app_blue_1: &blue_base
+    image: ghcr.io/nhatminhptit/minhvn_js-pthb26032026_fjs-md6/shopfast-prod:v1.0.0
+    stop_grace_period: 90s # Chờ 90s cho kết nối realtime kết thúc êm đẹp
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+  app_blue_2: *blue_base
+  app_blue_3: *blue_base
+  app_blue_4: *blue_base
+
+  # CỤM GREEN (Phiên bản v2 mới sửa lỗi - 4 container)
+  app_green_1: &green_base
+    image: ghcr.io/nhatminhptit/minhvn_js-pthb26032026_fjs-md6/shopfast-prod:v2.0.0
+    stop_grace_period: 90s
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+  app_green_2: *green_base
+  app_green_3: *green_base
+  app_green_4: *green_base
