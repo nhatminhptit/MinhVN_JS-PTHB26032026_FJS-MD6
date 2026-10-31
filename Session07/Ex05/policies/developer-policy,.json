@@ -1,0 +1,32 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DevFullDevAccess",
+      "Effect": "Allow",
+      "Action": ["s3:*", "ec2:*"],
+      "Resource": [
+        "arn:aws:s3:::shopfast-dev-*",
+        "arn:aws:s3:::shopfast-dev-*/*"
+      ]
+    },
+    {
+      "Sid": "DevReadOnlyProdAccess",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::shopfast-prod-*",
+        "arn:aws:s3:::shopfast-prod-*/*"
+      ]
+    },
+    {
+      "Sid": "DenyDevDestructiveProd",
+      "Effect": "Deny",
+      "Action": ["s3:PutObject", "s3:DeleteObject", "s3:DeleteBucket"],
+      "Resource": [
+        "arn:aws:s3:::shopfast-prod-*",
+        "arn:aws:s3:::shopfast-prod-*/*"
+      ]
+    }
+  ]
+}
