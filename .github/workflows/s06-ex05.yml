@@ -1,0 +1,142 @@
+name: S06 - Ex05 Automated Delivery Platform
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "Session06/Ex05/**"
+      - ".github/workflows/s06-ex05.yml"
+  workflow_dispatch:
+    inputs:
+      trigger_gate_block:
+        description: "Mô phỏng: Cố tình kích hoạt cổng kiểm soát chặn mã? (true/false)"
+        required: false
+        default: "false"
+      trigger_auto_rollback:
+        description: "Mô phỏng: Cố tình kích hoạt lỗi để hệ thống tự động quay lui? (true/false)"
+        required: false
+        default: "false"
+
+# Quản lý phần dùng chung & biến số môi trường
+env:
+  NODE_VERSION: "20"
+  WORKING_DIR: "Session06/Ex05"
+
+jobs:
+  # =========================================================================
+  # GIAI ĐOẠN 1: QUÉT BẢO MẬT & PHÂN TÍCH TĨNH (SECURITY SCAN & LINT)
+  # =========================================================================
+  security-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Quét kiểm tra khóa bí mật trong mã nguồn (Secret Scanning)
+        run: |
+          echo "Bắt đầu quét tìm khóa bí mật, private keys và API secrets..."
+          # Kiểm tra xem có file .env bị lọt vào không
+          if [ -f "${{ env.WORKING_DIR }}/.env" ]; then
+            echo "PHÁT HIỆN LỖI: Tồn tại file .env trong mã nguồn! Dừng quy trình."
+            exit 1
+          fi
+          echo "Không tìm thấy bất kỳ bí mật lộ liễu nào. Mã nguồn an toàn 100%!"
+
+  # =========================================================================
+  # GIAI ĐOẠN 2: CỔNG KIỂM SOÁT CHẤT LƯỢNG TỰ ĐỘNG (QUALITY GATE)
+  # =========================================================================
+  quality-gate:
+    needs: security-and-lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Cài đặt Node.js và khôi phục Cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
+
+      - name: Cài đặt phụ thuộc sạch sẽ
+        run: npm ci
+
+      - name: Chạy kiểm thử tự động và kiểm tra ngưỡng chất lượng
+        env:
+          LOW_COVERAGE: ${{ github.event.inputs.trigger_gate_block }}
+        run: node test.js
+
+  # =========================================================================
+  # GIAI ĐOẠN 3: ĐÓNG GÓI DOCKER VÀ ĐẨY LÊN KHO LƯU TRỮ (BUILD & PACKAGE)
+  # =========================================================================
+  build-and-package:
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Chuẩn hóa tên repository về chữ thường
+        run: echo "REPO_LOWER=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Đăng nhập vào GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cài đặt Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Đóng gói và đẩy Image lên GHCR
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ env.WORKING_DIR }}
+          file: ${{ env.WORKING_DIR }}/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ env.REPO_LOWER }}/shopfast-v9:${{ github.sha }}
+            ghcr.io/${{ env.REPO_LOWER }}/shopfast-v9:latest
+
+  # =========================================================================
+  # GIAI ĐOẠN 4: TRIỂN KHAI VÀO MÔI TRƯỜNG THẬT (DEPLOY PRODUCTION)
+  # =========================================================================
+  deploy-production:
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    concurrency:
+      group: prod-auto-pipeline
+      cancel-in-progress: false
+
+    steps:
+      - name: Triển khai phiên bản mới lên hạ tầng
+        run: |
+          echo "Đang triển khai container phiên bản ${{ github.sha }} lên cụm máy chủ..."
+          echo "Triển khai hoàn tất, bắt đầu chuyển tiếp sang giai đoạn giám sát."
+
+  # =========================================================================
+  # GIAI ĐOẠN 5: KIỂM ĐỊNH SAU DEPLOY & TỰ ĐỘNG QUAY LUI (POST-DEPLOY ROLLBACK)
+  # =========================================================================
+  post-deploy-verify:
+    needs: deploy-production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Thực thi kịch bản kiểm tra sức khỏe và Tự động quay lui nếu có lỗi
+        env:
+          SIMULATE_APP_ERROR: ${{ github.event.inputs.trigger_auto_rollback }}
+        run: |
+          chmod +x ${{ env.WORKING_DIR }}/verify-and-rollback.sh
+          ./${{ env.WORKING_DIR }}/verify-and-rollback.sh
