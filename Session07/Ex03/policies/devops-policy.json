@@ -1,0 +1,33 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowFullInfraManagement",
+      "Effect": "Allow",
+      "Action": ["ec2:*", "s3:*", "rds:*", "vpc:*"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyDeleteProdWithoutMFA",
+      "Effect": "Deny",
+      "Action": [
+        "s3:DeleteObject",
+        "s3:DeleteBucket",
+        "ec2:TerminateInstances",
+        "ec2:StopInstances",
+        "rds:DeleteDBInstance"
+      ],
+      "Resource": [
+        "arn:aws:s3:::shopfast-prod-*",
+        "arn:aws:s3:::shopfast-prod-*/*",
+        "arn:aws:ec2:*:*:instance/*",
+        "arn:aws:rds:*:*:db:shopfast-prod-*"
+      ],
+      "Condition": {
+        "BoolIfExists": {
+          "aws:MultiFactorAuthPresent": "false"
+        }
+      }
+    }
+  ]
+}
