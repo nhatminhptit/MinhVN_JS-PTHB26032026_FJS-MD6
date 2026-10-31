@@ -78,6 +78,11 @@ jobs:
       - name: Checkout mã nguồn
         uses: actions/checkout@v4
 
+      # THÊM BƯỚC NÀY ĐỂ ÉP TÊN REPOSITORY VỀ CHỮ THƯỜNG
+      - name: Chuyển tên repository thành chữ thường
+        run: |
+          echo "REPO_LOWER=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Đăng nhập vào GitHub Container Registry (GHCR)
         uses: docker/login-action@v3
         with:
@@ -95,5 +100,5 @@ jobs:
           file: Session06/Ex02/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/ex02:${{ github.sha }}
-            ghcr.io/${{ github.repository }}/ex02:latest
+            ghcr.io/${{ env.REPO_LOWER }}/ex02:${{ github.sha }}
+            ghcr.io/${{ env.REPO_LOWER }}/ex02:latest
